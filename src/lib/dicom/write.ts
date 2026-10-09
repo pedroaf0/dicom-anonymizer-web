@@ -2,11 +2,9 @@
 // árvore em memória, preservando byte a byte o pixel data original.
 
 import {
-  ByteReader,
   EMPTY,
   type DicomElement,
   type DicomFile,
-  type DicomItem,
   type ParseOpts,
   findElement,
   readText,
@@ -65,121 +63,103 @@ function padEven(value: Uint8Array, vr: string): Uint8Array {
   return out;
 }
 
-function writeElement(e: DicomElement, o: ParseOpts): Uint8Array {
+function elementHeader(e: DicomElement, o: ParseOpts, len: number, undef: boolean): Uint8Array {
   const be = o.bigEndian;
-
-  if (e.items !== null) {
-    const body = concat(
-      e.items.map((item) => {
-        const inner = concat(item.elements.map((c) => writeElement(c, o)));
-        return concat([u16(0xfffe, be), u16(0xe000, be), u32(inner.byteLength, be), inner]);
-      }),
-    );
-    if (o.implicit) return concat([u16(e.group, be), u16(e.elem, be), u32(body.byteLength, be), body]);
+  if (o.implicit) return concat([u16(e.group, be), u16(e.elem, be), u32(len, be)]);
+  if (LONG_VR.has(e.vr) || undef || len > 0xfffe) {
     return concat([
       u16(e.group, be),
       u16(e.elem, be),
-      vrBytes("SQ"),
+      vrBytes(undef && len > 0xfffe ? e.vr : e.vr),
       u16(0),
-      u32(body.byteLength, be),
-      body,
+      u32(len, be),
+    ]);
+  }
+  return concat([u16(e.group, be), u16(e.elem, be), vrBytes(e.vr), u16(len, be)]);
+}
+
+function writeElement(e: DicomElement, o: ParseOpts): Uint8Array {
+  const be = o.bigEndian;
+
+  // Sequência (VR SQ): corpo com comprimento calculado.
+  if (e.items !== null) {
+    const body = concat(
+      e.items.map((item) => {
+        const inner = concat(item.elements.map((child) => writeElement(child, o)));
+        return concat([u16(0xfffe, be), u16(0xe000, be), u32(inner.byteLength, be), inner]);
+      }),
+    );
+    const vr = e.vr === "SQ" ? "SQ" : e.vr;
+    const withVr: DicomElement = { ...e, vr };
+    return concat([elementHeader(withVr, o, body.byteLength, false), body]);
+  }
+
+  // Pixel data encapsulado: fragmentos como itens de comprimento indefinido.
+  if (e.fragments !== null) {
+    const frags = concat(
+      e.fragments.map((f) =>
+        concat([u16(0xfffe, be), u16(0xe000, be), u32(f.byteLength, be), f]),
+      ),
+    );
+    return concat([
+      elementHeader(e, o, 0xffffffff, true),
+      frags,
+      u16(0xfffe, be),
+      u16(0xe0dd, be),
+      u32(0, be),
     ]);
   }
 
   const value = padEven(e.value, e.vr);
-
-  // Pixel data encapsulado (JPEG, JPEG-2000, RLE...): fragmentos como itens
-  // de comprimento indefinido, exatamente como no arquivo de origem.
-  if (e.undefinedLength) {
-    const frags = concat(
-      e.items === null
-        ? []
-        : e.items.map((item) => {
-            const inner = concat(item.elements.map((c) => writeElement(c, o)));
-            return concat([u16(0xfffe, be), u16(0xe000, be), u32(inner.byteLength, be), inner]);
-          }),
-    );
-    const head = o.implicit
-      ? concat([u16(e.group, be), u16(e.elem, be), u32(0xffffffff, be)])
-      : concat([u16(e.group, be), u16(e.elem, be), vrBytes(e.vr), u16(0), u32(0xffffffff, be)]);
-    return concat([head, frags, u16(0xfffe, be), u16(0xe0dd, be), u32(0, be)]);
-  }
-
-  if (o.implicit) {
-    return concat([u16(e.group, be), u16(e.elem, be), u32(value.byteLength, be), value]);
-  }
-
-  if (LONG_VR.has(e.vr)) {
-    return concat([
-      u16(e.group, be),
-      u16(e.elem, be),
-      vrBytes(e.vr),
-      u16(0),
-      u32(value.byteLength, be),
-      value,
-    ]);
-  }
-
-  if (value.byteLength > 0xfffe) {
-    // Sem forma curta possível: usa VR desconhecido com comprimento de 32 bits.
-    return concat([
-      u16(e.group, be),
-      u16(e.elem, be),
-      vrBytes("UN"),
-      u16(0),
-      u32(value.byteLength, be),
-      value,
-    ]);
-  }
-
-  return concat([
-    u16(e.group, be),
-    u16(e.elem, be),
-    vrBytes(e.vr),
-    u16(value.byteLength, be),
-    value,
-  ]);
-}
-
-function writeItems(e: DicomElement, o: ParseOpts): Uint8Array {
-  return writeElement(e, o);
+  return concat([elementHeader(e, o, value.byteLength, false), value]);
 }
 
 /** Monta a File Meta Information, recalculando (0002,0000). */
 function buildMeta(f: DicomFile): Uint8Array {
   const o: ParseOpts = { implicit: false, bigEndian: false };
   const body = concat(
-    f.meta.filter((e) => e.group === 0x0002 && e.elem !== 0x0000).map((e) => writeItems(e, o)),
+    f.meta
+      .filter((e) => e.group === 0x0002 && e.elem !== 0x0000)
+      .map((e) => writeElement(e, o)),
   );
   const groupLength = new Uint8Array(4);
   new DataView(groupLength.buffer).setUint32(0, body.byteLength, true);
-  return concat([
-    u16(0x0002),
-    u16(0x0000),
-    vrBytes("UL"),
-    u16(0),
-    u32(4),
-    groupLength,
-    body,
-  ]);
+  return concat([u16(0x0002), u16(0x0000), vrBytes("UL"), u16(0), u32(4), groupLength, body]);
 }
 
-export function buildMetaElement(transferSyntax: string, sopClass: string, sopInstance: string) {
-  const mk = (elem: number, vr: string, text: string): DicomElement => ({
+function metaString(elem: number, vr: string, text: string): DicomElement {
+  const padded = text.length % 2 ? text + "\u0000" : text;
+  return {
     group: 0x0002,
     elem,
     vr,
-    value: new TextEncoder().encode(text.length % 2 ? text + "\u0000" : text),
+    value: new TextEncoder().encode(padded),
     items: null,
+    fragments: null,
     undefinedLength: false,
-  });
+  };
+}
+
+export function buildMetaElements(
+  transferSyntax: string,
+  sopClass: string,
+  sopInstance: string,
+): DicomElement[] {
   return [
-    mk(0x0001, "UI", sopClass),
-    mk(0x0002, "UI", sopInstance),
-    mk(0x0003, "UI", sopInstance),
-    mk(0x0010, "UI", transferSyntax),
-    mk(0x0012, "UI", "2.25.328951449451966303065558247111899980165"),
-    mk(0x0013, "SH", "ANONIMIZADOR_DICOM_1"),
+    {
+      group: 0x0002,
+      elem: 0x0001,
+      vr: "OB",
+      value: new Uint8Array([0x00, 0x01]),
+      items: null,
+      fragments: null,
+      undefinedLength: false,
+    },
+    metaString(0x0002, "UI", sopClass),
+    metaString(0x0003, "UI", sopInstance),
+    metaString(0x0010, "UI", transferSyntax),
+    metaString(0x0012, "UI", "2.25.328951449451966303065558247111899980165"),
+    metaString(0x0013, "SH", "ANONIMIZADOR_DICOM_1"),
   ];
 }
 
@@ -190,9 +170,9 @@ export function writeDicomFile(f: DicomFile): Uint8Array {
 
   const meta = f.meta.length > 0 ? buildMeta(f) : new Uint8Array(0);
   const o: ParseOpts = { implicit: f.implicitVR, bigEndian: f.bigEndian };
-  const dataset = concat(f.elements.map((e) => writeItems(e, o)));
+  const dataset = concat(f.elements.map((e) => writeElement(e, o)));
   return concat([preamble, meta, dataset]);
 }
 
-export { findElement, readText, tagInfo, ByteReader, EMPTY };
-export type { DicomElement, DicomFile, DicomItem, ParseOpts };
+export { EMPTY, findElement, readText, tagInfo };
+export type { DicomElement, DicomFile, ParseOpts };

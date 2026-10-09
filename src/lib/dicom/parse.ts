@@ -17,10 +17,12 @@ export interface DicomElement {
   group: number;
   elem: number;
   vr: string;
-  /** Bytes do valor. Vazio quando o elemento é uma sequência. */
+  /** Bytes do valor. Vazio quando o elemento é uma sequência ou pixel encapsulado. */
   value: Uint8Array;
-  /** Sequências (VR SQ) e pixel data encapsulado. */
+  /** Sequências (VR SQ). */
   items: DicomItem[] | null;
+  /** Pixel data encapsulado (JPEG, JPEG-2000, RLE...): fragmentos brutos. */
+  fragments: Uint8Array[] | null;
   undefinedLength: boolean;
 }
 
@@ -144,9 +146,34 @@ function looksLikeVr(a: number, b: number): boolean {
   return ch(a) && ch(b);
 }
 
+/** Lê os fragmentos de pixel data encapsulado até o delimitador (FFFE,E0DD). */
+function parseFragments(r: ByteReader, o: ParseOpts): Uint8Array[] {
+  const out: Uint8Array[] = [];
+  const be = o.bigEndian;
+  while (r.remaining >= 8) {
+    const group = r.u16(be);
+    const elem = r.u16(be, 2);
+    if (group !== 0xfffe) break;
+    if (elem === 0xe0dd) {
+      r.skip(8);
+      break;
+    }
+    if (elem !== 0xe000) {
+      r.skip(8);
+      break;
+    }
+    const len = r.u32(be, 4);
+    r.skip(8);
+    if (len === 0xffffffff) break;
+    if (len > r.remaining) throw new Error("Arquivo DICOM truncado.");
+    out.push(r.slice(len));
+  }
+  return out;
+}
+
 /**
  * Lê elementos até encontrar um delimitador de item/fim ou acabar o buffer.
- * Quando `bounded` é falso, o delimitador (FFFE,E00D / FFFE,E0DD) é consumido.
+ * O delimitador (FFFE,E00D / FFFE,E0DD) é consumido.
  */
 function parseElements(r: ByteReader, o: ParseOpts, depth: number): DicomElement[] {
   const out: DicomElement[] = [];
@@ -164,12 +191,31 @@ function parseElements(r: ByteReader, o: ParseOpts, depth: number): DicomElement
       const len = r.u32(be, 4);
       r.skip(8);
       const vr = tagInfo(group, elem)?.vr ?? "UN";
-      if (vr === "SQ" || len === 0xffffffff) {
+      if (len > r.remaining && len !== 0xffffffff) throw new Error("Arquivo DICOM truncado.");
+      if (vr === "SQ") {
         const items = parseItems(r, o, len, depth + 1);
-        out.push({ group, elem, vr, value: EMPTY, items, undefinedLength: len === 0xffffffff });
+        out.push({
+          group,
+          elem,
+          vr,
+          value: EMPTY,
+          items,
+          fragments: null,
+          undefinedLength: len === 0xffffffff,
+        });
+      } else if (len === 0xffffffff) {
+        const fragments = parseFragments(r, o);
+        out.push({ group, elem, vr, value: EMPTY, items: null, fragments, undefinedLength: true });
       } else {
-        if (len > r.remaining) throw new Error("Arquivo DICOM truncado.");
-        out.push({ group, elem, vr, value: r.slice(len), items: null, undefinedLength: false });
+        out.push({
+          group,
+          elem,
+          vr,
+          value: r.slice(len),
+          items: null,
+          fragments: null,
+          undefinedLength: false,
+        });
       }
       continue;
     }
@@ -185,13 +231,36 @@ function parseElements(r: ByteReader, o: ParseOpts, depth: number): DicomElement
       r.skip(8);
     }
 
-    if (vr === "SQ" || len === 0xffffffff) {
+    if (vr === "SQ") {
       const items = parseItems(r, o, len, depth + 1);
-      out.push({ group, elem, vr, value: EMPTY, items, undefinedLength: len === 0xffffffff });
+      out.push({
+        group,
+        elem,
+        vr,
+        value: EMPTY,
+        items,
+        fragments: null,
+        undefinedLength: len === 0xffffffff,
+      });
       continue;
     }
+
+    if (len === 0xffffffff) {
+      const fragments = parseFragments(r, o);
+      out.push({ group, elem, vr, value: EMPTY, items: null, fragments, undefinedLength: true });
+      continue;
+    }
+
     if (len > r.remaining) throw new Error("Arquivo DICOM truncado.");
-    out.push({ group, elem, vr, value: r.slice(len), items: null, undefinedLength: false });
+    out.push({
+      group,
+      elem,
+      vr,
+      value: r.slice(len),
+      items: null,
+      fragments: null,
+      undefinedLength: false,
+    });
   }
   return out;
 }
@@ -233,8 +302,7 @@ function parseMeta(r: ByteReader): DicomElement[] {
   const o: ParseOpts = { implicit: false, bigEndian: false };
   while (r.remaining >= 8) {
     const start = r.pos;
-    const group = r.u16(false);
-    if (group !== 0x0002) {
+    if (r.u16(false) !== 0x0002) {
       r.pos = start;
       break;
     }
@@ -253,7 +321,11 @@ function parseMeta(r: ByteReader): DicomElement[] {
   return out;
 }
 
-export function findElement(list: DicomElement[], group: number, elem: number): DicomElement | undefined {
+export function findElement(
+  list: DicomElement[],
+  group: number,
+  elem: number,
+): DicomElement | undefined {
   for (const e of list) if (e.group === group && e.elem === elem) return e;
   return undefined;
 }
@@ -285,7 +357,6 @@ export function parseDicomFile(bytes: Uint8Array): DicomFile {
   let meta: DicomElement[] = [];
   let bodyStart = 0;
   if (hasPreamble(bytes)) {
-    bodyStart = 132;
     const r = new ByteReader(bytes.subarray(132));
     meta = parseMeta(r);
     bodyStart = r.pos;
@@ -303,16 +374,20 @@ export function parseDicomFile(bytes: Uint8Array): DicomFile {
   const bigEndian = ts === EXPLICIT_BE;
   const o: ParseOpts = { implicit, bigEndian };
 
-  let elements: DicomElement[];
-  const body = new ByteReader(bytes.subarray(bodyStart));
   try {
-    elements = parseElements(body, o, 0);
+    const elements = parseElements(new ByteReader(bytes.subarray(bodyStart)), o, 0);
     if (elements.length === 0) throw new Error("vazio");
+    return {
+      meta,
+      elements,
+      transferSyntax: ts || EXPLICIT_LE,
+      implicitVR: implicit,
+      bigEndian,
+    };
   } catch {
-    // Última tentativa: assume VR implícito quando a sintaxe não foi declarada.
     if (implicit) throw new Error("Não foi possível ler este arquivo como DICOM.");
     const retry = new ByteReader(bytes.subarray(bodyStart));
-    elements = parseElements(retry, { implicit: true, bigEndian: false }, 0);
+    const elements = parseElements(retry, { implicit: true, bigEndian: false }, 0);
     if (elements.length === 0) throw new Error("Não foi possível ler este arquivo como DICOM.");
     return {
       meta,
@@ -322,6 +397,4 @@ export function parseDicomFile(bytes: Uint8Array): DicomFile {
       bigEndian: false,
     };
   }
-
-  return { meta, elements, transferSyntax: ts || EXPLICIT_LE, implicitVR: implicit, bigEndian };
 }
