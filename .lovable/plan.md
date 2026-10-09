@@ -6,8 +6,9 @@ Web app que recebe um ZIP (ou pasta/arquivos) de tomografia em DICOM, remove dad
 ## Experiência do usuário
 1. **Tela inicial** com título claro, selo "Funciona offline · Nada é enviado" e botão "Ver código-fonte no GitHub".
 2. **Área de arrastar e soltar** para ZIP, arquivos .dcm ou pasta inteira.
-3. **Pré-visualização**: quantidade de arquivos, quantos são DICOM, e tabela "antes → depois" dos campos sensíveis de um arquivo de exemplo (nome, data de nascimento, ID, instituição etc.).
-4. **Opções** (com explicação simples de cada uma):
+3. **Pré-visualização**: quantidade de arquivos, quantos são DICOM, e tabela "antes → depois" mostrando os valores reais dos campos sensíveis encontrados (nome, data de nascimento, ID, instituição etc.), agrupados por paciente/estudo quando houver mais de um.
+4. **Novo nome do paciente**: campo editável, com valor padrão "ANONIMIZADO" (também aplicado ao ID do paciente, ex.: "ANONIMIZADO"). O valor escolhido aparece na coluna "depois" em tempo real.
+5. **Opções** (com explicação simples de cada uma):
    - Manter datas do exame (padrão: deslocar/remover)
    - Manter sexo e idade aproximada (padrão: manter)
    - Remover tags privadas de fabricantes (padrão: sim)
