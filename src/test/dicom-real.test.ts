@@ -6,6 +6,8 @@ import { buildZip, loadBatch, newContext, expandInputs } from "@/lib/dicom/batch
 import { parseDicomFile, readText } from "@/lib/dicom/parse";
 import { DEFAULT_OPTIONS } from "@/lib/dicom/rules";
 
+// jsdom: File sem arrayBuffer
+const mk = (b: Uint8Array, name: string) => ({ name, arrayBuffer: async () => b.slice().buffer }) as unknown as File;
 const fx = (n: string) => new Uint8Array(readFileSync(join(__dirname, "fixtures", n)));
 const ct = fx("CT_small.dcm");
 const mr = fx("MR_small.dcm");
@@ -13,7 +15,7 @@ const mr = fx("MR_small.dcm");
 async function load() {
   // ZIP com duas séries (TC com 3 cortes + RM) e um arquivo que não é DICOM
   const zip = zipSync({ "exame/ct1.dcm": ct, "exame/ct2.dcm": ct, "exame/ct3.dcm": ct, "exame/mr.dcm": mr, "exame/leia.txt": strToU8("oi") });
-  const file = new File([zip as BlobPart], "exame.zip");
+  const file = mk(zip, "exame.zip");
   return loadBatch(await expandInputs([{ path: "exame.zip", file }]));
 }
 
@@ -53,7 +55,7 @@ describe("exames reais", () => {
 
   it("imagem comprimida é preservada", async () => {
     const j = fx("JPEG2000.dcm");
-    const file = new File([j as BlobPart], "j.dcm");
+    const file = mk(j, "j.dcm");
     const b = await loadBatch(await expandInputs([{ path: "j.dcm", file }]));
     if (b.dicoms.length === 0) return; // amostra pode ser só cabeçalho
     const { errors } = await buildZip(b.dicoms, b.series, DEFAULT_OPTIONS, newContext(), () => {});
