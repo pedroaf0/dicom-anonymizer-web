@@ -68,7 +68,7 @@ export async function loadBatch(inputs: InputFile[]): Promise<LoadedBatch> {
   const skipped: string[] = [];
   const studies = new Map<string, StudyGroup>();
   for (let i = 0; i < inputs.length; i++) {
-    const it = inputs[i];
+    const it = inputs[i]!;
     const base = it.path.split("/").pop()?.toUpperCase() ?? "";
     if (base === "DICOMDIR") {
       skipped.push(it.path);
@@ -106,14 +106,14 @@ export async function buildZip(
   const series = new Map<string, number>();
   for (let i = 0; i < dicoms.length; i++) {
     try {
-      const out = anonymizeBytes(dicoms[i].bytes, o, ctx);
+      const out = anonymizeBytes(dicoms[i]!.bytes, o, ctx);
       const parsed = parseDicomFile(out);
       const s = readText(parsed.elements, 0x0020, 0x000e) || "x";
       if (!series.has(s)) series.set(s, series.size + 1);
       const folder = `SERIE_${String(series.get(s)).padStart(3, "0")}`;
       files[`ANONIMIZADO/${folder}/IMG_${String(i + 1).padStart(5, "0")}.dcm`] = [out, { level: 0 }] as never;
     } catch (err) {
-      errors.push(`${dicoms[i].path}: ${(err as Error).message}`);
+      errors.push(`${dicoms[i]!.path}: ${(err as Error).message}`);
     }
     if (i % 20 === 19 || i === dicoms.length - 1) {
       onProgress(i + 1);
