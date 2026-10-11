@@ -386,7 +386,7 @@ export function parseDicomFile(bytes: Uint8Array): DicomFile {
       bigEndian,
     };
   } catch (err) {
-    console.log("DBG", (err as Error).stack?.split("\n").slice(0,4).join("|"));
+    console.log("DBG", String(err), bodyStart, meta.length);
     if (implicit) throw new Error("Não foi possível ler este arquivo como DICOM.");
     const retry = new ByteReader(bytes.subarray(bodyStart));
     const elements = parseElements(retry, { implicit: true, bigEndian: false }, 0);
