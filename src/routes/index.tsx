@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { buildZip, expandInputs, loadBatch, newContext, previewAfter, type LoadedBatch } from "@/lib/dicom/batch";
+import { buildZip, seriesFolder, expandInputs, loadBatch, newContext, previewAfter, type LoadedBatch } from "@/lib/dicom/batch";
 import { DEFAULT_OPTIONS, allRules, type AnonOptions, type DateMode } from "@/lib/dicom/rules";
 
 /** Endereço do repositório: altere aqui quando publicar no GitHub. */
@@ -91,7 +91,7 @@ function Index() {
   const [ctx, setCtx] = useState(newContext);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<number | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number; label: string } | null>(null);
   const [result, setResult] = useState<{ count: number; errors: string[] } | null>(null);
   const [reveal, setReveal] = useState<Record<string, boolean>>({});
   const [dragging, setDragging] = useState(false);
@@ -127,18 +127,19 @@ function Index() {
     }
   }
 
-  async function run() {
+  async function run(only?: { key: string; number: number }) {
     if (!batch) return;
-    setProgress(0);
+    const label = only ? `Série ${only.number}` : "Todas as séries";
+    setProgress({ done: 0, total: 1, label });
     setResult(null);
-    const { zip, errors } = await buildZip(batch.dicoms, opts, ctx, (d) => setProgress(d));
+    const { zip, errors, count } = await buildZip(batch.dicoms, batch.series, opts, ctx, (done, total) => setProgress({ done, total, label }), only?.key);
     const url = URL.createObjectURL(new Blob([zip as BlobPart], { type: "application/zip" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = "tomografia_anonimizada.zip";
+    a.download = only ? `tomografia_anonimizada_${seriesFolder(only.number)}.zip` : "tomografia_anonimizada.zip";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-    setResult({ count: batch.dicoms.length - errors.length, errors });
+    setResult({ count, errors });
     setProgress(null);
   }
 
@@ -329,14 +330,38 @@ function Index() {
             ))}
 
             <section className="space-y-3">
-              <Button size="lg" onClick={run} disabled={progress !== null} className="w-full sm:w-auto">
-                <Download className="h-4 w-4" /> Anonimizar e baixar ZIP
+              <Button size="lg" onClick={() => run()} disabled={progress !== null} className="w-full sm:w-auto">
+                <Download className="h-4 w-4" /> Anonimizar e baixar ZIP {batch.series.length > 1 ? "(todas as séries)" : ""}
               </Button>
+              {batch.series.length > 1 && (
+                <div className="overflow-hidden rounded-xl border bg-card">
+                  <div className="border-b px-5 py-3">
+                    <h2 className="font-semibold">Baixar séries separadamente</h2>
+                    <p className="text-xs text-muted-foreground">{batch.series.length} séries encontradas. Cada uma vira um ZIP próprio, com os mesmos novos identificadores.</p>
+                  </div>
+                  <div className="divide-y">
+                    {batch.series.map((s) => (
+                      <div key={s.key} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                        <div className="text-sm">
+                          <span className="font-medium">Série {s.number}</span>
+                          <span className="text-muted-foreground">
+                            {" "}· {s.modality || "?"} · {s.files} {s.files === 1 ? "arquivo" : "arquivos"}
+                            {s.description && !opts.removeDescriptions ? ` · ${s.description}` : ""}
+                          </span>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => run(s)} disabled={progress !== null}>
+                          <Download className="h-4 w-4" /> Baixar série
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {progress !== null && (
                 <div className="space-y-1">
-                  <Progress value={(progress / batch.dicoms.length) * 100} />
+                  <Progress value={(progress.done / progress.total) * 100} />
                   <p className="text-xs text-muted-foreground">
-                    {progress} de {batch.dicoms.length} arquivos
+                    {progress.label}: {progress.done} de {progress.total} arquivos
                   </p>
                 </div>
               )}
