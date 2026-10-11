@@ -9,6 +9,16 @@ import { afterValue, anonymizeBytes, newContext, type AnonContext } from "./anon
 export interface InputFile {
   path: string;
   bytes: Uint8Array;
+  /** UID original da série (preenchido em loadBatch). */
+  series?: string;
+}
+
+export interface SeriesInfo {
+  key: string;
+  number: number;
+  modality: string;
+  description: string;
+  files: number;
 }
 
 export interface PreviewField {
@@ -29,6 +39,7 @@ export interface LoadedBatch {
   dicoms: InputFile[];
   skipped: string[];
   studies: StudyGroup[];
+  series: SeriesInfo[];
 }
 
 const isZip = (b: Uint8Array) => b[0] === 0x50 && b[1] === 0x4b;
@@ -67,6 +78,7 @@ export async function loadBatch(inputs: InputFile[]): Promise<LoadedBatch> {
   const dicoms: InputFile[] = [];
   const skipped: string[] = [];
   const studies = new Map<string, StudyGroup>();
+  const series = new Map<string, SeriesInfo>();
   for (let i = 0; i < inputs.length; i++) {
     const it = inputs[i]!;
     const base = it.path.split("/").pop()?.toUpperCase() ?? "";
@@ -77,7 +89,18 @@ export async function loadBatch(inputs: InputFile[]): Promise<LoadedBatch> {
     try {
       const f = parseDicomFile(it.bytes);
       if (!f.elements.some((e) => e.group >= 0x0008)) throw new Error();
-      dicoms.push(it);
+      const sk = readText(f.elements, 0x0020, 0x000e) || "sem-serie";
+      dicoms.push({ ...it, series: sk });
+      const si = series.get(sk);
+      if (si) si.files++;
+      else
+        series.set(sk, {
+          key: sk,
+          number: series.size + 1,
+          modality: readText(f.elements, 0x0008, 0x0060),
+          description: readText(f.elements, 0x0008, 0x103e),
+          files: 1,
+        });
       const key = readText(f.elements, 0x0020, 0x000d) || "sem-estudo";
       const s = studies.get(key);
       if (s) s.files++;
@@ -87,7 +110,7 @@ export async function loadBatch(inputs: InputFile[]): Promise<LoadedBatch> {
     }
     if (i % 50 === 49) await new Promise((r) => setTimeout(r));
   }
-  return { total: inputs.length, dicoms, skipped, studies: [...studies.values()] };
+  return { total: inputs.length, dicoms, skipped, studies: [...studies.values()], series: [...series.values()] };
 }
 
 /** Contexto de prévia: UIDs e deslocamento consistentes entre prévia e ZIP. */
@@ -95,32 +118,40 @@ export function previewAfter(f: PreviewField, o: AnonOptions, ctx: AnonContext):
   return afterValue(f.tag, f.vr, f.before, o, ctx);
 }
 
+export const seriesFolder = (n: number) => `SERIE_${String(n).padStart(3, "0")}`;
+
+/** Gera o ZIP. Com `onlySeries`, inclui apenas aquela série (UID original). */
 export async function buildZip(
-  dicoms: InputFile[],
+  all: InputFile[],
+  seriesList: SeriesInfo[],
   o: AnonOptions,
   ctx: AnonContext,
-  onProgress: (done: number) => void,
-): Promise<{ zip: Uint8Array; errors: string[] }> {
+  onProgress: (done: number, total: number) => void,
+  onlySeries?: string,
+): Promise<{ zip: Uint8Array; errors: string[]; count: number }> {
   const files: Record<string, Uint8Array> = {};
   const errors: string[] = [];
-  const series = new Map<string, number>();
+  const num = new Map(seriesList.map((s) => [s.key, s.number]));
+  const dicoms = onlySeries ? all.filter((d) => d.series === onlySeries) : all;
+  const perSeries = new Map<string, number>();
   for (let i = 0; i < dicoms.length; i++) {
     try {
-      const out = anonymizeBytes(dicoms[i]!.bytes, o, ctx);
-      const parsed = parseDicomFile(out);
-      const s = readText(parsed.elements, 0x0020, 0x000e) || "x";
-      if (!series.has(s)) series.set(s, series.size + 1);
-      const folder = `SERIE_${String(series.get(s)).padStart(3, "0")}`;
-      files[`ANONIMIZADO/${folder}/IMG_${String(i + 1).padStart(5, "0")}.dcm`] = [out, { level: 0 }] as never;
+      const d = dicoms[i]!;
+      const out = anonymizeBytes(d.bytes, o, ctx);
+      const sk = d.series ?? "sem-serie";
+      const n = (perSeries.get(sk) ?? 0) + 1;
+      perSeries.set(sk, n);
+      const folder = seriesFolder(num.get(sk) ?? 0);
+      files[`ANONIMIZADO/${folder}/IMG_${String(n).padStart(5, "0")}.dcm`] = [out, { level: 0 }] as never;
     } catch (err) {
       errors.push(`${dicoms[i]!.path}: ${(err as Error).message}`);
     }
     if (i % 20 === 19 || i === dicoms.length - 1) {
-      onProgress(i + 1);
+      onProgress(i + 1, dicoms.length);
       await new Promise((r) => setTimeout(r));
     }
   }
-  return { zip: zipSync(files), errors };
+  return { zip: zipSync(files), errors, count: dicoms.length - errors.length };
 }
 
 export { newContext };

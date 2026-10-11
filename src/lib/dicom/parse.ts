@@ -175,7 +175,7 @@ function parseFragments(r: ByteReader, o: ParseOpts): Uint8Array[] {
  * Lê elementos até encontrar um delimitador de item/fim ou acabar o buffer.
  * O delimitador (FFFE,E00D / FFFE,E0DD) é consumido.
  */
-function parseElements(r: ByteReader, o: ParseOpts, depth: number): DicomElement[] {
+function parseElements(r: ByteReader, o: ParseOpts, depth: number, onlyGroup?: number): DicomElement[] {
   const out: DicomElement[] = [];
   const be = o.bigEndian;
   while (r.remaining >= 8) {
@@ -185,6 +185,7 @@ function parseElements(r: ByteReader, o: ParseOpts, depth: number): DicomElement
       r.skip(8);
       break;
     }
+    if (onlyGroup !== undefined && group !== onlyGroup) break;
     if (depth > 12) throw new Error("Sequências DICOM aninhadas demais.");
 
     if (o.implicit) {
@@ -221,7 +222,7 @@ function parseElements(r: ByteReader, o: ParseOpts, depth: number): DicomElement
     }
 
     const vr = String.fromCharCode(r.u8(4), r.u8(5));
-    if (!looksLikeVr(r.u8(4), r.u8(5))) throw new Error("Cabeçalho DICOM inválido.");
+    if (!looksLikeVr(r.u8(4), r.u8(5))) throw new Error(`Cabeçalho DICOM inválido. ${group.toString(16)},${elem.toString(16)} ${r.pos}`);
     let len: number;
     if (LONG_VR.has(vr)) {
       len = r.u32(be, 8);
@@ -307,7 +308,7 @@ function parseMeta(r: ByteReader): DicomElement[] {
       break;
     }
     try {
-      const el = parseElements(r, o, 0);
+      const el = parseElements(r, o, 0, 0x0002);
       if (el.length === 0) {
         r.pos = start;
         break;
@@ -359,7 +360,7 @@ export function parseDicomFile(bytes: Uint8Array): DicomFile {
   if (hasPreamble(bytes)) {
     const r = new ByteReader(bytes.subarray(132));
     meta = parseMeta(r);
-    bodyStart = r.pos;
+    bodyStart = 132 + r.pos;
   } else {
     const r = new ByteReader(bytes);
     const maybe = parseMeta(r);
@@ -384,7 +385,8 @@ export function parseDicomFile(bytes: Uint8Array): DicomFile {
       implicitVR: implicit,
       bigEndian,
     };
-  } catch {
+  } catch (err) {
+    console.log("DBG", String(err), bodyStart, meta.length);
     if (implicit) throw new Error("Não foi possível ler este arquivo como DICOM.");
     const retry = new ByteReader(bytes.subarray(bodyStart));
     const elements = parseElements(retry, { implicit: true, bigEndian: false }, 0);
