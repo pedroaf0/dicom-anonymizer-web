@@ -222,7 +222,7 @@ function parseElements(r: ByteReader, o: ParseOpts, depth: number, onlyGroup?: n
     }
 
     const vr = String.fromCharCode(r.u8(4), r.u8(5));
-    if (!looksLikeVr(r.u8(4), r.u8(5))) throw new Error("Cabeçalho DICOM inválido.");
+    if (!looksLikeVr(r.u8(4), r.u8(5))) throw new Error(`Cabeçalho DICOM inválido. ${group.toString(16)},${elem.toString(16)} pos ${r.pos} rem ${r.remaining}`);
     let len: number;
     if (LONG_VR.has(vr)) {
       len = r.u32(be, 8);
