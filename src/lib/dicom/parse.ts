@@ -222,7 +222,7 @@ function parseElements(r: ByteReader, o: ParseOpts, depth: number, onlyGroup?: n
     }
 
     const vr = String.fromCharCode(r.u8(4), r.u8(5));
-    if (!looksLikeVr(r.u8(4), r.u8(5))) throw new Error("Cabeçalho DICOM inválido.");
+    if (!looksLikeVr(r.u8(4), r.u8(5))) throw new Error(`Cabeçalho DICOM inválido. ${group.toString(16)},${elem.toString(16)} ${r.pos}`);
     let len: number;
     if (LONG_VR.has(vr)) {
       len = r.u32(be, 8);
@@ -385,7 +385,8 @@ export function parseDicomFile(bytes: Uint8Array): DicomFile {
       implicitVR: implicit,
       bigEndian,
     };
-  } catch {
+  } catch (err) {
+    console.log("DBG", (err as Error).stack?.split("\n").slice(0,4).join("|"));
     if (implicit) throw new Error("Não foi possível ler este arquivo como DICOM.");
     const retry = new ByteReader(bytes.subarray(bodyStart));
     const elements = parseElements(retry, { implicit: true, bigEndian: false }, 0);
