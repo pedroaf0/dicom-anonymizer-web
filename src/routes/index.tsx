@@ -257,7 +257,7 @@ function Index() {
                     ["shift", "Deslocar", "Mesma diferença entre datas, mas em outra época"],
                     ["remove", "Remover", "Apaga todas as datas"],
                     ["keep", "Manter", "Datas originais (menos anônimo)"],
-                  ].map(([v, l, d]) => (
+                  ].map(([v = "", l, d]) => (
                     <label key={v} className="flex cursor-pointer gap-2 rounded-lg border p-3 text-sm">
                       <RadioGroupItem value={v} className="mt-0.5" />
                       <span>

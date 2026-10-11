@@ -30,7 +30,7 @@ export interface AnonContext {
 export function newContext(): AnonContext {
   const r = new Uint32Array(1);
   crypto.getRandomValues(r);
-  return { uidMap: new Map(), shiftDays: -(365 + (r[0] % 3650)) };
+  return { uidMap: new Map(), shiftDays: -(365 + ((r[0] ?? 0) % 3650)) };
 }
 
 /** UID novo no formato 2.25.<inteiro aleatório de 128 bits>. */
@@ -55,7 +55,7 @@ export function mapUid(ctx: AnonContext, old: string): string {
 function shiftDate(da: string, days: number): string {
   const m = /^(\d{4})(\d{2})(\d{2})/.exec(da);
   if (!m) return "";
-  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  const d = new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!));
   d.setUTCDate(d.getUTCDate() + days);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}`;
