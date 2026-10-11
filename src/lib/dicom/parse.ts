@@ -175,7 +175,7 @@ function parseFragments(r: ByteReader, o: ParseOpts): Uint8Array[] {
  * Lê elementos até encontrar um delimitador de item/fim ou acabar o buffer.
  * O delimitador (FFFE,E00D / FFFE,E0DD) é consumido.
  */
-function parseElements(r: ByteReader, o: ParseOpts, depth: number): DicomElement[] {
+function parseElements(r: ByteReader, o: ParseOpts, depth: number, onlyGroup?: number): DicomElement[] {
   const out: DicomElement[] = [];
   const be = o.bigEndian;
   while (r.remaining >= 8) {
@@ -185,6 +185,7 @@ function parseElements(r: ByteReader, o: ParseOpts, depth: number): DicomElement
       r.skip(8);
       break;
     }
+    if (onlyGroup !== undefined && group !== onlyGroup) break;
     if (depth > 12) throw new Error("Sequências DICOM aninhadas demais.");
 
     if (o.implicit) {
@@ -307,7 +308,7 @@ function parseMeta(r: ByteReader): DicomElement[] {
       break;
     }
     try {
-      const el = parseElements(r, o, 0);
+      const el = parseElements(r, o, 0, 0x0002);
       if (el.length === 0) {
         r.pos = start;
         break;
