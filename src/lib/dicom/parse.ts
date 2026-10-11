@@ -165,7 +165,7 @@ function parseFragments(r: ByteReader, o: ParseOpts): Uint8Array[] {
     const len = r.u32(be, 4);
     r.skip(8);
     if (len === 0xffffffff) break;
-    if (len > r.remaining) throw new Error("Arquivo DICOM truncado.");
+    if (len > r.remaining) throw new Error(`Arquivo DICOM truncado. ${group.toString(16)},${elem.toString(16)} ${vr} ${len} ${r.remaining}`);
     out.push(r.slice(len));
   }
   return out;
@@ -252,7 +252,7 @@ function parseElements(r: ByteReader, o: ParseOpts, depth: number, onlyGroup?: n
       continue;
     }
 
-    if (len > r.remaining) throw new Error("Arquivo DICOM truncado.");
+    if (len > r.remaining) throw new Error(`Arquivo DICOM truncado. ${group.toString(16)},${elem.toString(16)} ${vr} ${len} ${r.remaining}`);
     out.push({
       group,
       elem,
@@ -385,7 +385,8 @@ export function parseDicomFile(bytes: Uint8Array): DicomFile {
       implicitVR: implicit,
       bigEndian,
     };
-  } catch {
+  } catch (err) {
+    console.log("DBG", String(err));
     if (implicit) throw new Error("Não foi possível ler este arquivo como DICOM.");
     const retry = new ByteReader(bytes.subarray(bodyStart));
     const elements = parseElements(retry, { implicit: true, bigEndian: false }, 0);
