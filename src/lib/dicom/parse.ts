@@ -165,7 +165,7 @@ function parseFragments(r: ByteReader, o: ParseOpts): Uint8Array[] {
     const len = r.u32(be, 4);
     r.skip(8);
     if (len === 0xffffffff) break;
-    if (len > r.remaining) throw new Error(`Arquivo DICOM truncado. ${group.toString(16)},${elem.toString(16)} ${vr} ${len} ${r.remaining}`);
+    if (len > r.remaining) throw new Error("Arquivo DICOM truncado.");
     out.push(r.slice(len));
   }
   return out;
@@ -222,7 +222,7 @@ function parseElements(r: ByteReader, o: ParseOpts, depth: number, onlyGroup?: n
     }
 
     const vr = String.fromCharCode(r.u8(4), r.u8(5));
-    if (!looksLikeVr(r.u8(4), r.u8(5))) throw new Error(`Cabeçalho DICOM inválido. ${group.toString(16)},${elem.toString(16)} pos ${r.pos} rem ${r.remaining}`);
+    if (!looksLikeVr(r.u8(4), r.u8(5))) throw new Error("Cabeçalho DICOM inválido.");
     let len: number;
     if (LONG_VR.has(vr)) {
       len = r.u32(be, 8);
@@ -252,7 +252,7 @@ function parseElements(r: ByteReader, o: ParseOpts, depth: number, onlyGroup?: n
       continue;
     }
 
-    if (len > r.remaining) throw new Error(`Arquivo DICOM truncado. ${group.toString(16)},${elem.toString(16)} ${vr} ${len} ${r.remaining}`);
+    if (len > r.remaining) throw new Error("Arquivo DICOM truncado.");
     out.push({
       group,
       elem,
@@ -360,7 +360,7 @@ export function parseDicomFile(bytes: Uint8Array): DicomFile {
   if (hasPreamble(bytes)) {
     const r = new ByteReader(bytes.subarray(132));
     meta = parseMeta(r);
-    bodyStart = r.pos;
+    bodyStart = 132 + r.pos;
   } else {
     const r = new ByteReader(bytes);
     const maybe = parseMeta(r);
@@ -385,8 +385,7 @@ export function parseDicomFile(bytes: Uint8Array): DicomFile {
       implicitVR: implicit,
       bigEndian,
     };
-  } catch (err) {
-    console.log("DBG", String(err));
+  } catch {
     if (implicit) throw new Error("Não foi possível ler este arquivo como DICOM.");
     const retry = new ByteReader(bytes.subarray(bodyStart));
     const elements = parseElements(retry, { implicit: true, bigEndian: false }, 0);
