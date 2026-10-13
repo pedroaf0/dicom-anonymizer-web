@@ -11,14 +11,14 @@ export default defineConfig({
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this.
     server: { entry: "server" },
-    // This app is browser-only; prerendering during the GitHub Pages static build
-    // evaluates the route in Node and can fail on browser-only APIs used by the UI.
-    // Keep it as a pure client static bundle instead of SSR prerendering.
+    // Static build for GitHub Pages: prerender the single page at build time.
+    // Re-enable prerender so Vite/TanStack generate the final index.html in .output/public.
     pages: [{ path: "/" }],
-    prerender: { enabled: false, autoStaticPathsDiscovery: false },
+    prerender: { enabled: true, autoStaticPathsDiscovery: false },
   },
   vite: {
     // Relative asset paths so the app works under /dicom-anonymizer-web/ on GitHub Pages.
     base: "./",
+    // Vite 8 can handle tsconfig paths natively; the lovable config already sets this.
   },
 });
