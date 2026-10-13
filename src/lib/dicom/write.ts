@@ -41,13 +41,13 @@ function concat(parts: Uint8Array[]): Uint8Array {
 
 function u16(v: number, be = false): Uint8Array {
   const b = new Uint8Array(2);
-  new DataView(b.buffer).setUint16(0, v, be);
+  new DataView(b.buffer).setUint16(0, v, !be);
   return b;
 }
 
 function u32(v: number, be = false): Uint8Array {
   const b = new Uint8Array(4);
-  new DataView(b.buffer).setUint32(0, v, be);
+  new DataView(b.buffer).setUint32(0, v, !be);
   return b;
 }
 
