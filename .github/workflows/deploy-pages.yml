@@ -17,22 +17,38 @@ jobs:
       - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Build static site
         run: bun run build
 
+      - name: Detect build output directory
+        id: detect
+        run: |
+          for d in dist/client .output/public dist build; do
+            if [ -f "$d/index.html" ]; then
+              echo "dir=$d" >> "$GITHUB_OUTPUT"
+              echo "Found index.html in $d"
+              exit 0
+            fi
+          done
+          echo "index.html not found. Build output:"
+          find . -name index.html -not -path "./node_modules/*" || true
+          ls -la dist .output 2>/dev/null || true
+          exit 1
+
       - name: Fix absolute asset paths for subdirectory hosting
         run: |
-          sed -i 's|"/\./assets/|"./assets/|g; s|"/assets/|"./assets/|g; s|"/favicon.ico|"./favicon.ico|g' dist/client/index.html
-          grep -oE '(src|href)="[^"]*"' dist/client/index.html | sort -u
+          T="${{ steps.detect.outputs.dir }}/index.html"
+          sed -i 's|"/\./assets/|"./assets/|g; s|"/assets/|"./assets/|g; s|"/favicon.ico|"./favicon.ico|g' "$T"
+          grep -aoE '(src|href)="[^"]*"' "$T" | sort -u || true
 
       - name: Add .nojekyll (serve files as-is)
-        run: touch dist/client/.nojekyll
+        run: touch "${{ steps.detect.outputs.dir }}/.nojekyll"
 
       - name: Publish to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: dist/client
+          publish_dir: ${{ steps.detect.outputs.dir }}
           publish_branch: gh-pages
