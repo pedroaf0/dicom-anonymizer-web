@@ -41,13 +41,13 @@ function concat(parts: Uint8Array[]): Uint8Array {
 
 function u16(v: number, be = false): Uint8Array {
   const b = new Uint8Array(2);
-  new DataView(b.buffer).setUint16(0, v, be);
+  new DataView(b.buffer).setUint16(0, v, !be);
   return b;
 }
 
 function u32(v: number, be = false): Uint8Array {
   const b = new Uint8Array(4);
-  new DataView(b.buffer).setUint32(0, v, be);
+  new DataView(b.buffer).setUint32(0, v, !be);
   return b;
 }
 
@@ -124,7 +124,7 @@ function buildMeta(f: DicomFile): Uint8Array {
   );
   const groupLength = new Uint8Array(4);
   new DataView(groupLength.buffer).setUint32(0, body.byteLength, true);
-  return concat([u16(0x0002), u16(0x0000), vrBytes("UL"), u16(0), u32(4), groupLength, body]);
+  return concat([u16(0x0002), u16(0x0000), vrBytes("UL"), u16(4), groupLength, body]);
 }
 
 function metaString(elem: number, vr: string, text: string): DicomElement {
