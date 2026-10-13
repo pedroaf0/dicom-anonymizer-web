@@ -25,16 +25,27 @@ jobs:
       - name: Detect build output directory
         id: detect
         run: |
-          for d in dist/client .output/public dist build; do
+          # Check the usual static output folders first.
+          for d in dist/client .output/public dist build public server .; do
             if [ -f "$d/index.html" ]; then
               echo "dir=$d" >> "$GITHUB_OUTPUT"
               echo "Found index.html in $d"
               exit 0
             fi
           done
+
+          # Fallback: search the repo for any generated index.html, regardless of folder layout.
+          INDEX=$(find . -name index.html -not -path "./node_modules/*" -not -path "./.git/*" -print -quit || true)
+          if [ -n "$INDEX" ]; then
+            DIR=$(dirname "$INDEX")
+            echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+            echo "Found index.html at $INDEX (using $DIR)"
+            exit 0
+          fi
+
           echo "index.html not found. Build output:"
           find . -name index.html -not -path "./node_modules/*" || true
-          ls -la dist .output 2>/dev/null || true
+          ls -la dist .output public server build 2>/dev/null || true
           exit 1
 
       - name: Fix absolute asset paths for subdirectory hosting
