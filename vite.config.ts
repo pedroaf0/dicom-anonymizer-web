@@ -9,11 +9,13 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
+    // nitro/vite builds from this.
     server: { entry: "server" },
-    // Static build for GitHub Pages: prerender the single page at build time.
+    // This app is browser-only; prerendering during the GitHub Pages static build
+    // evaluates the route in Node and can fail on browser-only APIs used by the UI.
+    // Keep it as a pure client static bundle instead of SSR prerendering.
     pages: [{ path: "/" }],
-    prerender: { enabled: true, autoStaticPathsDiscovery: false },
+    prerender: { enabled: false, autoStaticPathsDiscovery: false },
   },
   vite: {
     // Relative asset paths so the app works under /dicom-anonymizer-web/ on GitHub Pages.
