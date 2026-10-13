@@ -314,7 +314,8 @@ function parseMeta(r: ByteReader): DicomElement[] {
         break;
       }
       out.push(...el);
-    } catch {
+    } catch (e) {
+      console.log("META", String(e));
       r.pos = start;
       break;
     }
