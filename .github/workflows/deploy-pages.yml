@@ -1,0 +1,38 @@
+name: Deploy static build to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build static site
+        run: bun run build
+
+      - name: Fix absolute asset paths for subdirectory hosting
+        run: |
+          sed -i 's|"/\./assets/|"./assets/|g; s|"/assets/|"./assets/|g; s|"/favicon.ico|"./favicon.ico|g' dist/client/index.html
+          grep -oE '(src|href)="[^"]*"' dist/client/index.html | sort -u
+
+      - name: Add .nojekyll (serve files as-is)
+        run: touch dist/client/.nojekyll
+
+      - name: Publish to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: dist/client
+          publish_branch: gh-pages
