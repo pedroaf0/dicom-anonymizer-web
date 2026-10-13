@@ -24,7 +24,7 @@ import { buildZip, seriesFolder, expandInputs, loadBatch, newContext, previewAft
 import { DEFAULT_OPTIONS, allRules, type AnonOptions, type DateMode } from "@/lib/dicom/rules";
 
 /** Endereço do repositório: altere aqui quando publicar no GitHub. */
-export const GITHUB_URL = "https://github.com/";
+export const GITHUB_URL = "https://github.com/pedroaf0/dicom-anonymizer-web";
 
 export const Route = createFileRoute("/")({
   head: () => ({
