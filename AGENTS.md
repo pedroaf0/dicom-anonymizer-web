@@ -8,3 +8,4 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+- GitHub Pages deploy: run `bash scripts/build-pages.sh`, which writes the static site to committed `docs/` (Pages source: main /docs); router uses hash history so subpath hosting never 404s.

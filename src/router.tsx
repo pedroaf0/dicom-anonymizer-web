@@ -10,7 +10,7 @@ export const getRouter = () => {
     context: { queryClient },
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
-    history: createHashHistory(),
+    ...(typeof window !== "undefined" ? { history: createHashHistory() } : {}),
   });
 
   return router;
