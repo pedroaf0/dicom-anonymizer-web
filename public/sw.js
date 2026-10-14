@@ -1,9 +1,10 @@
 // Service worker: guarda os arquivos do próprio app para funcionar sem internet.
-// Não envia nada a lugar nenhum; apenas cacheia o que o navegador já baixou.
-const CACHE = "anonimizador-v1";
+// Não envia nada a lugar nenhum. A lista abaixo é preenchida pelo script de publicação.
+const PRECACHE = [/*PRECACHE*/];
+const CACHE = "anonimizador-/*VERSION*/";
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./"])).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", ...PRECACHE])).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {
@@ -12,16 +13,23 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// Primeiro o cache (abre instantâneo e offline); se faltar, busca e guarda.
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
   e.respondWith(
-    fetch(req)
-      .then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy));
-        return res;
-      })
-      .catch(() => caches.match(req).then((r) => r || caches.match("./"))),
+    caches.match(req, { ignoreSearch: true }).then(
+      (hit) =>
+        hit ||
+        fetch(req)
+          .then((res) => {
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(req, copy));
+            }
+            return res;
+          })
+          .catch(() => caches.match("./")),
+    ),
   );
 });
