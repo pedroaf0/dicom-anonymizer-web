@@ -22,6 +22,7 @@ import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { buildZip, seriesFolder, expandInputs, loadBatch, newContext, previewAfter, type LoadedBatch } from "@/lib/dicom/batch";
 import { DEFAULT_OPTIONS, allRules, type AnonOptions, type DateMode } from "@/lib/dicom/rules";
+import { zipName, type NameMode } from "@/lib/dicom/naming";
 
 /** Endereço do repositório: altere aqui quando publicar no GitHub. */
 export const GITHUB_URL = "https://github.com/pedroaf0/dicom-anonymizer-web";
@@ -97,6 +98,9 @@ function Index() {
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
+  const [nameMode, setNameMode] = useState<NameMode>("timestamp");
+  const [customName, setCustomName] = useState("exame_anonimizado");
+  const [originalName, setOriginalName] = useState("");
 
   useEffect(() => {
     if (import.meta.env.PROD && "serviceWorker" in navigator) {
@@ -110,6 +114,7 @@ function Index() {
 
   async function handle(files: { path: string; file: File }[]) {
     if (files.length === 0) return;
+    setOriginalName(files[0]!.path.split("/")[0] || files[0]!.file.name);
     setError(null);
     setResult(null);
     setLoading(true);
@@ -136,7 +141,13 @@ function Index() {
     const url = URL.createObjectURL(new Blob([zip as BlobPart], { type: "application/zip" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = only ? `tomografia_anonimizada_${seriesFolder(only.number)}.zip` : "tomografia_anonimizada.zip";
+    a.download = await zipName({
+      mode: nameMode,
+      custom: customName,
+      original: originalName,
+      date: new Date(),
+      ...(only ? { suffix: seriesFolder(only.number) } : {}),
+    });
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     setResult({ count, errors });
@@ -328,6 +339,34 @@ function Index() {
                 </div>
               </section>
             ))}
+
+            <section className="space-y-3 rounded-xl border bg-card p-6">
+              <h2 className="text-lg font-semibold">Nome do arquivo baixado</h2>
+              <RadioGroup value={nameMode} onValueChange={(v) => setNameMode(v as NameMode)} className="grid gap-2 sm:grid-cols-3">
+                {(
+                  [
+                    ["timestamp", "Data e hora", "Ex.: 20261014-090503.zip"],
+                    ["timestamp-hash", "Data e hora + código", "Código curto derivado do nome original, sem revelá-lo"],
+                    ["custom", "Personalizado", "Você escolhe o nome"],
+                  ] as const
+                ).map(([v, l, d]) => (
+                  <label key={v} className="flex cursor-pointer gap-2 rounded-lg border p-3 text-sm">
+                    <RadioGroupItem value={v} className="mt-0.5" />
+                    <span>
+                      <span className="font-medium">{l}</span>
+                      <span className="block text-xs text-muted-foreground">{d}</span>
+                    </span>
+                  </label>
+                ))}
+              </RadioGroup>
+              {nameMode === "custom" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="zipname">Nome personalizado</Label>
+                  <Input id="zipname" value={customName} placeholder="exame_anonimizado" onChange={(e) => setCustomName(e.target.value)} />
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">Ao baixar uma série separada, o nome recebe o final _SERIE_00N.</p>
+            </section>
 
             <section className="space-y-3">
               <Button size="lg" onClick={() => run()} disabled={progress !== null} className="w-full sm:w-auto">
