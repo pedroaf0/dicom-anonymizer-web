@@ -15,7 +15,7 @@ export async function shortHash(text: string): Promise<string> {
 
 /** Remove caracteres inválidos em nomes de arquivo. */
 export function sanitize(name: string): string {
-  return name.replace(/\.zip$/i, "").replace(/[\\/:*?"<>|\x00-\x1f]+/g, "_").trim().slice(0, 120);
+  return name.replace(/\.zip$/i, "").replace(/[\\/:*?"<>|\x00-\x1f]+/g, "_").replace(/^[_\s.]+|[_\s.]+$/g, "").slice(0, 120);
 }
 
 export async function zipName(opts: {
